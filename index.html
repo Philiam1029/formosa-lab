@@ -256,6 +256,24 @@ mark.gl{background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0
   a,button,.chip,.opt,.clickable{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 }
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* 單字頁字組選擇：類別分段按鈕 + 字組卡（手機左右滑） */
+.vpicker{margin-bottom:20px}
+.seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line)}
+.seg button{flex:1 1 0;min-width:0;border:0;background:none;padding:8px 4px;border-radius:10px;cursor:pointer;color:var(--muted);font-weight:600;font-size:.95rem;line-height:1.2;white-space:nowrap}
+.seg button small{display:block;font-size:.66rem;font-weight:500;letter-spacing:.04em;opacity:.8;margin-top:1px}
+.seg button.on{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+.settiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:12px}
+.settile{display:flex;flex-direction:column;gap:3px;text-align:left;padding:11px 13px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:inherit;cursor:pointer;min-width:0}
+.settile b{font-size:.98rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settile span{font-size:.76rem;color:var(--muted)}
+.settile .bar{height:4px;margin-top:5px}
+.settile.on{border-color:var(--accent);background:var(--accent-soft)}
+.settile.on b{color:var(--accent)}
+@media (max-width:700px){
+  .settiles{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-inline:clamp(16px,4vw,48px);margin-inline:calc(-1 * clamp(16px,4vw,48px));padding:2px clamp(16px,4vw,48px) 8px;scrollbar-width:none}
+  .settiles::-webkit-scrollbar{display:none}
+  .settile{flex:0 0 40%;scroll-snap-align:start}
+}
 /* 橫排裡的下拉選單（例如一萬字庫的「第 N 組」）在窄螢幕不可撐破卡片 */
 .row>.row{min-width:0;max-width:100%}
 .row>select{min-width:0;max-width:100%;text-overflow:ellipsis}
@@ -2308,6 +2326,14 @@ const BANK_LEVELS={1:"國中基礎",2:"高中",3:"大學 / 多益",4:"進階 (TO
 const BANK_TAGS=[[256,"多益"],[512,"雅思學術"],[2,"高中學測"],[4,"大學四級"],[8,"大學六級"],[16,"研究所"],[32,"TOEFL"],[64,"IELTS"],[128,"GRE"]];
 const TOEIC_SETS=Object.keys(VOCAB_SETS).filter(s=>/^(tsl|toeic)/.test(s));
 const IELTS_SETS=Object.keys(VOCAB_SETS).filter(s=>/^(nawl|ielts)/.test(s));
+const VOCAB_CATS=[
+  {id:"toeic",label:"多益",sub:"TOEIC",match:s=>/^(tsl|toeic)/.test(s)},
+  {id:"ielts",label:"雅思",sub:"IELTS",match:s=>/^(nawl|ielts)/.test(s)||s==="colloc"},
+  {id:"hs",label:"高中",sub:"學測",match:s=>!/^(tsl|toeic|nawl|ielts)/.test(s)&&s!=="colloc"},
+  {id:"bank",label:"字庫",sub:"14k"},
+  {id:"mine",label:"我的",sub:"複習"}];
+const VOCAB_SHORT={toeic900:"900 進階",toeic_biz:"商務補充",toeic50:"Part 5 精選",ielts_awl:"AWL 核心",colloc:"寫作搭配詞",wego_b5:"課文單字",wego_quiz:"進階單字",b2:"中翻英拼字 一",b3:"中翻英拼字 二"};
+function vocabShort(s){ const m=/^(tsl|nawl)\d+$/.test(s)&&(VOCAB_SETS[s].name.match(/[\d–]+$/)||[])[0]; return m?(s.startsWith("tsl")?"核心 ":"學術 ")+m:VOCAB_SHORT[s]||VOCAB_SETS[s].name; }
 function bankToVocab(r){ return {set:"bank",w:r[0],phonetic:r[1],zh:r[2],pos:"",lv:r[3],tags:r[4],frq:r[5],collins:r[6],id:"wb:"+r[0]}; }
 function recWord(id, known){ const w=P.words[id]||{k:0,u:0}; if(known) w.k++; else w.u++; w.last=Date.now(); P.words[id]=w; touchDay(); saveP(); }
 
@@ -2767,8 +2793,21 @@ function renderVocab(main, rest){
   let set=rest[0]||"tsl1", mode=rest[1]||"cards";
   main.append(h("div",{class:"pagehead"}, h("div",{}, h("div",{class:"eyebrow"},"Vocabulary"), h("h1",{},"單字練習"), h("p",{},"一萬字分級字庫 "+WORDBANK.length+" 字 + 精選字組 "+VOCAB.length+" 字（含例句） · 字卡 / 拼字 / 選字 · 熟練度存於本機"))));
   const sets=Object.keys(VOCAB_SETS);
-  const setRow=h("div",{class:"row",style:"margin-bottom:10px"}, h("button",{class:"chip"+(set==="bank"?" on":""),onclick:()=>location.hash="#vocab/bank/"+mode},"一萬字庫 · "+WORDBANK.length), ...sets.map(s=>h("button",{class:"chip"+(s===set?" on":""),onclick:()=>location.hash="#vocab/"+s+"/"+mode},VOCAB_SETS[s].name+" · "+VOCAB.filter(v=>v.set===s).length)), h("button",{class:"chip"+(set==="review"?" on":""),onclick:()=>location.hash="#vocab/review/"+mode},"弱點複習"), h("button",{class:"chip"+(set==="mine"?" on":""),onclick:()=>location.hash="#vocab/mine/"+mode},"我的收藏 · "+P.mine.length));
-  main.append(setRow);
+  /* 字組選擇：第一層「考試類別」分段按鈕，第二層該類別的字組卡（含熟記進度）；手機上第二層左右滑動 */
+  const catOf=s=>s==="bank"?"bank":(s==="review"||s==="mine")?"mine":(VOCAB_CATS.find(c=>c.match&&c.match(s))||VOCAB_CATS[2]).id;
+  const cat=catOf(set), lastSet=store.get("fel.vocabLast",{});
+  if(set!=="bank"&&set!=="review"&&set!=="mine"){ lastSet[cat]=set; store.set("fel.vocabLast",lastSet); }
+  const catSets=id=>id==="bank"?["bank"]:id==="mine"?["review","mine"]:sets.filter(s=>catOf(s)===id);
+  const knownIn=list=>list.filter(v=>{const w=P.words[v.id];return w&&w.k>w.u;}).length;
+  const tile=s=>{ const list=s==="mine"?P.mine.map(m=>({id:"mine:"+m.w})):s==="review"?[]:VOCAB.filter(v=>v.set===s); const n=s==="review"?Object.values(P.words).filter(w=>w&&w.u>=w.k).length:list.length; const k=s==="review"?0:knownIn(list);
+    return h("button",{class:"settile"+(s===set?" on":""),"aria-pressed":String(s===set),onclick:()=>location.hash="#vocab/"+s+"/"+mode},
+      h("b",{},s==="review"?"弱點複習":s==="mine"?"我的收藏":vocabShort(s)), h("span",{},s==="review"?n+" 個待加強":s==="mine"?n+" 字":`${n} 字 · 熟記 ${k}`),
+      s==="review"||s==="mine"?null:h("div",{class:"bar"},h("i",{style:"width:"+(n?Math.round(k/n*100):0)+"%"}))); };
+  const picker=h("div",{class:"vpicker"},
+    h("div",{class:"seg",role:"tablist"}, ...VOCAB_CATS.map(c=>h("button",{class:c.id===cat?"on":"",role:"tab","aria-selected":String(c.id===cat),onclick:()=>{ const cs=catSets(c.id); location.hash="#vocab/"+(cs.includes(lastSet[c.id])?lastSet[c.id]:cs[0])+"/"+mode; }}, c.label, c.sub?h("small",{},c.sub):null))),
+    cat==="bank"?null:h("div",{class:"settiles"}, ...catSets(cat).map(tile)));
+  main.append(picker);
+  setTimeout(()=>{ const row=picker.querySelector(".settiles"), on=row&&row.querySelector(".settile.on"); if(on&&row.scrollWidth>row.clientWidth) row.scrollLeft=on.offsetLeft-row.firstElementChild.offsetLeft; }, 0);
   /* 一萬字庫篩選狀態 */
   const bank=Object.assign({lv:2,tag:0,group:0,size:50}, store.get("fel.bank",{}));
   let bankAll=[], bankGroups=0;
